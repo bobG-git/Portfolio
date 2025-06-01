@@ -1,3 +1,29 @@
+-- Calculating marketing KPIs from  marketing data across different digital media channels --
+
+
+
+-- Step 1: Data preperation and quality verification --
+
+
+-- Checking data for missing values and 0s --
+SELECT *
+FROM marketing
+WHERE
+  id IS NULL OR id = '' OR
+  c_date IS NULL OR c_date = '' OR
+  campaign_name IS NULL OR campaign_name = '' OR
+  category IS NULL OR category = '' OR
+  campaign_id IS NULL OR campaign_id = '' OR
+  impressions IS NULL OR impressions = 0 OR
+  mark_spent IS NULL OR mark_spent = 0 OR
+  clicks IS NULL OR clicks = 0 OR
+  leads IS NULL OR leads = 0 OR
+  orders IS NULL OR orders = 0 OR
+  revenue IS NULL OR revenue = 0;
+-- The data appears to be in good shape, with no missing values and zeros appropriately accounted for --
+
+
+-- Next up, identifing duplicate records based on key columns using the ROW_NUMBER() function --
 WITH CTE AS (
 SELECT *, 
 ROW_NUMBER() OVER(
@@ -9,7 +35,10 @@ FROM sales.marketing)
 SELECT *
 FROM CTE
 WHERE row_num >1;
+-- Luckily again no duplicates found --
 
+
+-- Creating a duplicate of the 'marketing' table structure for testing purposes -- 
 USE sales;
 
 CREATE TABLE marketing2
@@ -19,23 +48,26 @@ INSERT INTO marketing2
 SELECT *
 FROM marketing;
 
+
+
+-- Step 2 : KPI calculations and data analysis --
+
+
+-- First round of KPI calculations inlcuding: CAC, ROI, CTR, CPC, RPC --
+SELECT *, mark_spent/leads AS `Customer-Acquisition-Cost (CAC)`, ((revenue - mark_spent)/mark_spent) * 100 AS ROI,
+(CAST(clicks AS FLOAT)/impressions)*100 AS `Click-through-rate (CTR)`,
+mark_spent/clicks AS `Cost-per-click (CPC)`
+revenue/clicks AS `Revenue-per-click (RPC)`
+FROM marketing2;
+
+-- Few use cases of the KPIs --
 SELECT campaign_name, SUM(mark_spent)/ SUM(leads) AS CAC, 
 (((SUM(revenue) - SUM(mark_spent))/SUM(mark_spent))*100) AS ROI
 FROM marketing2
 GROUP BY campaign_name;
 
-SELECT *, mark_spent/leads AS `Customer-Acquisition-Cost`, ((revenue - mark_spent)/mark_spent) * 100 AS ROI,
-(CAST(clicks AS FLOAT)/impressions)*100 AS `Click-through-rate`,
-mark_spent/clicks AS `Cost-per-click`, mark_spent/leads AS `Cost-per-lead`,
-revenue/clicks AS `Revenue-per-click`
-FROM marketing2;
 
-WITH CTE AS
-(SELECT *, mark_spent/leads AS `Customer-Acquisition-Cost`, ((revenue - mark_spent)/mark_spent) * 100 AS ROI,
-(CAST(clicks AS FLOAT)/impressions)*100 AS `Click-through-rate`,
-mark_spent/clicks AS `Cost-per-click`, mark_spent/leads AS `Cost-per-lead`,
-revenue/clicks AS `Revenue-per-click`
-FROM marketing2)
+-- Organizing data into a CTE for easier filtering and validation --
 WITH CTE AS (
   SELECT *, 
          mark_spent / leads AS `Customer-Acquisition-Cost`, 
@@ -66,7 +98,9 @@ WHERE
   `Cost-per-click` IS NULL OR
   `Cost-per-lead` IS NULL OR
   `Revenue-per-click` IS NULL;
-  
+
+
+-- Or as a sub --
   SELECT *
 FROM (
   SELECT *, 
@@ -98,9 +132,7 @@ WHERE
   `Revenue-per-click` IS NULL;
 
 
-
-DROP TABLE marketing3;
-
+-- Creating a new table to store all newly calculated KPI fields --
 CREATE TABLE `marketing3` (
   `id` int DEFAULT NULL,
   `c_date` text,
@@ -127,94 +159,37 @@ CREATE TABLE `marketing3` (
 SELECT * FROM
 marketing3;
 
-INSERT INTO marketing3
-SELECT *, mark_spent/leads AS `Customer-Acquisition-Cost`, ((revenue - mark_spent)/mark_spent) * 100 AS ROI,
-(CAST(clicks AS FLOAT)/impressions)*100 AS `Click-through-rate`,
-mark_spent/clicks AS `Cost-per-click`, mark_spent/leads AS `Cost-per-lead`,
-revenue/clicks AS `Revenue-per-click`
-FROM marketing2;
+
+-- Inserting calculated values into the newly created KPI table --
 
 INSERT INTO marketing3
 SELECT 
   *,
   mark_spent / NULLIF(leads, 0) AS `Customer-Acquisition-Cost`,
-  ((revenue - mark_spent) / NULLIF(mark_spent, 0)) * 100 AS ROI,
-  (CAST(clicks AS FLOAT) / NULLIF(impressions, 0)) * 100 AS `Click-through-rate`,
-  mark_spent / NULLIF(clicks, 0) AS `Cost-per-click`,
-  mark_spent / NULLIF(leads, 0) AS `Cost-per-lead`,
-  revenue / NULLIF(clicks, 0) AS `Revenue-per-click`
+  ((CAST(revenue AS DOUBLE) - mark_spent) / NULLIF(mark_spent, 0)) * 100 AS ROI
+  (CAST(clicks AS DOUBLE) / NULLIF(impressions, 0)) * 100 AS `Click-through-rate`,
+  (CAST(mark_spent AS DOUBLE)/ NULLIF(clicks, 0) AS `Cost-per-click`,
+  (CAST(mark_spent AS DOUBLE) / NULLIF(leads, 0) AS `Cost-per-lead`,
+  (CAST(revenue AS DOUBLE) / NULLIF(clicks, 0) AS `Revenue-per-click`
 FROM marketing2;
 
 SELECT *
 FROM marketing3;
 
 
-
+ -- Second round of KPI calculations --
 
 SELECT revenue/clicks AS RPC
-FROM marketing2;
-
-SELECT *, 
-
-SELECT COUNT(DISTINCT campaign_name)
-FROM marketing2;
+FROM marketing3;
 
 SELECT clicks, impressions, (clicks/impressions) * 100, 
 (CAST(clicks AS FLOAT)/impressions)*100, (clicks /CAST(impressions AS FLOAT)*100)
-FROM marketing2;
-
-SELECT SUM(leads), SUM(mark_spent)
-FROM marketing2
-WHERE campaign_name = 'facebook_tier1';
+FROM marketing3;
 
 SELECT *
-FROM marketing2;
+FROM marketing3;
 
-INSERT INTO marketing3
-SELECT *, mark_spent/leads AS `Customer-Acquisition-Cost`, ((revenue - mark_spent)/mark_spent) * 100 AS ROI,
-(CAST(clicks AS FLOAT)/impressions)*100 AS `Click-through-rate`,
-mark_spent/clicks AS `Cost-per-click`, mark_spent/leads AS `Cost-per-lead`,
-revenue/clicks AS `Revenue-per-click`
-FROM marketing2;
-
-USE sales;
-
-# AVERAGE ORDER VALUE(AOV): AVERAGE VALUE OF AN ORDER IN A CONTEXT
--- THE CONTEXT IN AOV THIS TIME IS CAMPAIGN NAME. I.E AVERAGE 
-WITH CTE4 AS 
-(
-SELECT campaign_name, 
-SUM(revenue) AS total_revenue, 
-SUM(orders) AS total_orders,   
-SUM(revenue) / NULLIF(SUM(orders), 0) AS average_order_value
-FROM marketing 
-GROUP BY campaign_name
--- ORDER BY total_orders DESC;
-)
-SELECT * 
--- AVG(total_orders) OVER () AS overall_avg, 
--- AVG(average_order_value) OVER() AS overall_avg_avg_value
-FROM CTE4
-WHERE average_order_value < 4729.002492019766;
--- AND total_orders/COUNT(total_orders) > 731.1818;
-
-SELECT campaign_id, 
-SUM(revenue) AS total_revenue, 
-SUM(orders) AS total_orders, 
-SUM(revenue) / NULLIF(SUM(orders), 0) AS average_order_value 
-FROM marketing 
-GROUP BY campaign_id;
--- profit_percentage_based_on_cost (ROI)
--- the percent of which return(profit/loss) is greater/less
--- than the cost/ the amount invested. 
--- FORMULA: ((S.P - C.P)/C.P) * 100
--- return based on cost
-
--- profit_percentage_based_on_revenue
--- the percentage of which return(profit/loss) is greater/less 
--- than the revenue generated by the product.
--- FORMULA: ((S.P - C.P)/S.P) * 100
--- return based on revenue
+-- KPI calculations -- 
 SELECT campaign_id, category,
  SUM(revenue) AS total_revenue, 
  (SUM(revenue) / NULLIF((SELECT SUM(revenue) FROM marketing2), 0)) * 100 AS percent_of_total_revenue,
@@ -228,35 +203,13 @@ SELECT campaign_id, category,
  (SUM(orders) / NULLIF((SELECT SUM(orders) FROM marketing2), 0)) * 100 AS percent_of_total_orders,
   SUM(clicks) AS total_clicks,
 (SUM(clicks) / NULLIF((SELECT SUM(clicks) FROM marketing2), 0)) * 100 AS percent_of_total_clicks
- FROM marketing2
+ FROM marketing3
  GROUP BY campaign_id, category
  ORDER BY category DESC;
 
-SELECT *, 
-CASE 
-  WHEN leads = 0 THEN 0
-  ELSE mark_spent/leads
-END AS `Customer-Acquisition-Cost/Cost-per-Lead`,
-((revenue - mark_spent) / NULLIF(mark_spent, 0)) * 100 AS `ROI / per-dollar-profit`,
-(CAST(clicks AS FLOAT)/impressions)*100 AS `Click-through-rate %`,
-mark_spent/clicks AS `Cost-per-click`,
-revenue/clicks AS `Revenue-per-click`,
-CASE 
-  WHEN orders = 0 THEN 0
-  ELSE revenue / orders
-END AS `Profit_Amount`
 
-FROM marketing2
-
-WHERE mark_spent > 100000;
-
-SELECT *
-FROM marketing2;
-
-SELECT category, campaign_id
-FROM marketing2
-CROSS JOIN marketing2;
-
+-- In a CTE with case for 0 value --
+	
 WITH CTE AS
 (
 SELECT *,
@@ -309,7 +262,7 @@ END AS `Click-through-rate %`,
     ELSE revenue / clicks 
   END AS `Revenue-per-click`
   
-FROM marketing2
+FROM marketing3
 )
 
 SELECT 
@@ -318,7 +271,9 @@ SELECT
 *
 FROM CTE;
 
-CREATE TABLE `marketing3` (
+
+-- Creating a more refined table for storing all the values -- 
+CREATE TABLE `marketing4` (
   `id` text,
   `c_date` text,
   `campaign_name` text,
@@ -344,7 +299,8 @@ CREATE TABLE `marketing3` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
-INSERT INTO marketing3
+-- Inserting calculated values into new table with case for 0 values --
+INSERT INTO marketing4
 SELECT *,
 
   CASE 
@@ -395,52 +351,23 @@ SELECT *,
 FROM marketing2;
 
 
+-- KPI calculations -- 
 SELECT *,
 impressions / NULLIF((SELECT SUM(impressions) FROM marketing3), 0) * 100  AS percent_of_total_impressions,
 leads / NULLIF((SELECT SUM(leads) FROM marketing3), 0) * 100 AS percent_of_total_leads,
 revenue / impressions AS revenue_per_impression
-FROM marketing3;
-
-
-SELECT 
-campaign_id,
-  SUM(impressions) AS total_impressions,
-  SUM(leads) AS total_leads,
-  SUM(revenue) AS total_revenue,
-
-  -- Calculate percentage of total impressions
-  (SUM(impressions) / NULLIF((SELECT SUM(impressions) FROM marketing3), 0)) * 100 AS percent_of_total_impressions,
-
-  -- Calculate percentage of total leads
-  (SUM(leads) / NULLIF((SELECT SUM(leads) FROM marketing3), 0)) * 100 AS percent_of_total_leads,
-
-  -- Revenue per impression
-  (SUM(revenue) / NULLIF(SUM(impressions), 0)) AS revenue_per_impression,
-  (SUM(revenue) / NULLIF(SUM(impressions), 0)) * 100 AS revenue_per_100impressions,
-  (SUM(revenue) / NULLIF(SUM(impressions), 0)) * 1000 AS revenue_per_1000impressions,
-  
-  (SUM(mark_spent) / NULLIF(SUM(impressions), 0)) AS cost_per_impression,
-  (SUM(mark_spent) / NULLIF(SUM(impressions), 0)) * 100 AS cost_per_100impressions,
-  (SUM(mark_spent) / NULLIF(SUM(impressions), 0)) * 1000 AS cost_per_1000impressions,
-  
-  (SUM(profit) / NULLIF(SUM(impressions), 0)) AS profit_per_impression,
-  (SUM(profit) / NULLIF(SUM(impressions), 0)) * 100 AS profit_per_100impressions,
-  (SUM(profit) / NULLIF(SUM(impressions), 0)) * 1000 AS profit_per_1000impressions
-
-FROM marketing3
-GROUP BY campaign_id;
-
+FROM marketing4;
 
 
 SELECT *,
 
-  -- Calculate percentage of total impressions
+  
   impressions / NULLIF((SELECT SUM(impressions) FROM marketing3), 0) * 100 AS percent_of_total_impressions,
 
-  -- Calculate percentage of total leads
+
   leads / NULLIF((SELECT SUM(leads) FROM marketing3), 0)* 100 AS percent_of_total_leads,
 
-  -- Revenue per impression
+  
   revenue / impressions  AS revenue_per_impression,
   (revenue / impressions) * 100 AS revenue_per_100impressions,
   (revenue / impressions) * 1000 AS revenue_per_1000impressions,
@@ -471,102 +398,26 @@ SELECT *,
 
 
 
-FROM marketing3;
--- WHERE profit >= 0;
--- WHERE campaign_name = 'google_hot
--- ORDER BY Profit DESC;
+FROM marketing4;
 
 
--- group by days
-ALTER TABLE marketing3
+-- Adding a day column to the data --
+ALTER TABLE marketing4
 MODIFY COLUMN c_date DATE;
 
 SELECT *
-FROM marketing3
-WHERE revenue = 0
-AND mark_spent = 0;
+from marketing4;
 
-select *
-from marketing3;
-
-ALTER TABLE marketing3
-CHANGE COLUMN ROI `ROI / per-dollar-profit` DOUBLE;
-
-
-ALTER TABLE marketing3
+ALTER TABLE marketing4
 ADD COLUMN day VARCHAR(10);
 
-UPDATE marketing3
+UPDATE marketing4
 SET day = DAYNAME(c_date);
 
-SELECT COUNT(*) AS column_count
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE table_schema = 'sales'
-  AND table_name = 'marketing3';
-  
-  id, c_date, campaign_name, category, campaign_id, 
-  impressions, mark_spent, clicks, leads, orders, revenue, 
-  percent_of_total_orders, Profit, percent_of_total_profit, 
-  percentage_return_based_on_total_revenue, Average_Order_Value(AOV), 
-  ROI / per-dollar-profit, Customer_Acquisition_Cost/Cost_per_Lead, 
-  Click_through_rate %, Cost_per_click, percent_of_total_clicks, 
-  Revenue_per_click, day, percent_of_total_impressions, percent_of_total_leads, 
-  revenue_per_impression, revenue_per_100impressions, revenue_per_1000impressions, 
-  cost_per_impression, cost_per_100impressions, cost_per_1000impressions, 
-  profit_per_impression, profit_per_100impressions, profit_per_1000impressions, 
-  impressions_per_click, impressions_per_100clicks, impressions_per_1000clicks, 
-  clicks-per-leads, leads-per-click, orders-per-lead, lead-per-order, cost-per-order,
-  per-dollar-contribution-to-order
   
   
-  CREATE TABLE `marketing4` (
-  `id` text,
-  `c_date` date DEFAULT NULL,
-  `day` varchar(10) DEFAULT NULL,
-  `campaign_name` text,
-  `category` text,
-  `campaign_id` text,
-  `impressions` int DEFAULT NULL,
-  `mark_spent` double DEFAULT NULL,
-  `clicks` int DEFAULT NULL,
-  `leads` int DEFAULT NULL,
-  `orders` int DEFAULT NULL,
-  `revenue` double DEFAULT NULL,
-  `percent_of_total_orders` double DEFAULT '0',
-  `Profit` double DEFAULT '0',
-  `percent_of_total_profit` double DEFAULT '0',
-  `percentage_return_based_on_total_revenue` double DEFAULT '0',
-  `Average_Order_Value(AOV)` double DEFAULT '0',
-  `ROI / per-dollar-profit` double DEFAULT NULL,
-  `Customer_Acquisition_Cost/Cost_per_Lead` double DEFAULT '0',
-  `Click_through_rate %` double DEFAULT '0',
-  `Cost_per_click` double DEFAULT '0',
-  `percent_of_total_clicks` double DEFAULT '0',
-  `Revenue_per_click` double DEFAULT '0',
-  `percent_of_total_impressions` double DEFAULT '0', 
-  `percent_of_total_leads` double DEFAULT '0', 
-  `revenue_per_impression` double DEFAULT '0',
-  `revenue_per_100impressions` double DEFAULT '0', 
-  `revenue_per_1000impressions` double DEFAULT '0', 
-  `cost_per_impression` double DEFAULT '0',
-  `cost_per_100impressions` double DEFAULT '0',
-  `cost_per_1000impressions` double DEFAULT '0', 
-  `profit_per_impression` double DEFAULT '0',
-  `profit_per_100impressions` double DEFAULT '0', 
-  `profit_per_1000impressions` double DEFAULT '0',
-  `impressions_per_click` double DEFAULT '0',
-  `impressions_per_100clicks` double DEFAULT '0',
-  `impressions_per_1000clicks` double DEFAULT '0', 
-  `clicks_per_leads` double DEFAULT '0', 
-  `leads_per_click` double DEFAULT '0',
-  `orders_per_lead` double DEFAULT '0', 
-  `lead_per_order` double DEFAULT '0', 
-  `cost_per_order` double DEFAULT '0',
-  `per_dollar_contribution_to_order` double DEFAULT '0'
-  
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `marketing4` (
+ -- Creating table to store all KPIs calculated so far -- 
+CREATE TABLE `marketing5` (
   `id` TEXT,
   `c_date` DATE DEFAULT NULL,
   `day` VARCHAR(10) DEFAULT NULL,
@@ -612,7 +463,7 @@ CREATE TABLE `marketing4` (
   `per_dollar_contribution_to_order` DOUBLE DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-INSERT INTO marketing4 (
+INSERT INTO marketing5 (
   id, c_date, campaign_name, category, campaign_id, impressions, mark_spent, clicks, leads, orders, revenue,
   percent_of_total_orders, Profit, percent_of_total_profit, percentage_return_based_on_total_revenue,
   Average_Order_Value_AOV, ROI_per_dollar_profit, Customer_Acquisition_Cost_Cost_per_Lead,
@@ -631,51 +482,123 @@ SELECT
   `Click_through_rate %`, Cost_per_click, percent_of_total_clicks, Revenue_per_click,
   day,
 
-  impressions / NULLIF((SELECT SUM(impressions) FROM marketing3), 0) * 100,
-  leads / NULLIF((SELECT SUM(leads) FROM marketing3), 0) * 100,
+   CASE 
+    WHEN (SELECT SUM(impressions) FROM marketing3) = 0 THEN 0
+    ELSE impressions / (SELECT SUM(impressions) FROM marketing3) * 100 
+  END AS percent_of_total_impressions,
 
-  revenue / NULLIF(impressions, 0),
-  (revenue / NULLIF(impressions, 0)) * 100,
-  (revenue / NULLIF(impressions, 0)) * 1000,
+  -- Percent of total leads
+  CASE 
+    WHEN (SELECT SUM(leads) FROM marketing3) = 0 THEN 0
+    ELSE leads / (SELECT SUM(leads) FROM marketing3) * 100
+  END AS percent_of_total_leads,
 
-  mark_spent / NULLIF(impressions, 0),
-  (mark_spent / NULLIF(impressions, 0)) * 100,
-  (mark_spent / NULLIF(impressions, 0)) * 1000,
+  -- Revenue per impression
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE revenue / impressions
+  END AS revenue_per_impression,
 
-  profit / NULLIF(impressions, 0),
-  (profit / NULLIF(impressions, 0)) * 100,
-  (profit / NULLIF(impressions, 0)) * 1000,
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE (revenue / impressions) * 100
+  END AS revenue_per_100impressions,
 
-  impressions / NULLIF(CAST(clicks AS DOUBLE), 0),
-  (impressions / NULLIF(CAST(clicks AS DOUBLE), 0)) * 100,
-  (impressions / NULLIF(CAST(clicks AS DOUBLE), 0)) * 1000,
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE (revenue / impressions) * 1000
+  END AS revenue_per_1000impressions,
 
-  clicks / NULLIF(CAST(leads AS DOUBLE), 0),
-  leads / NULLIF(CAST(clicks AS DOUBLE), 0),
-  orders / NULLIF(CAST(leads AS DOUBLE), 0),
-  leads / NULLIF(CAST(orders AS DOUBLE), 0),
-  mark_spent / NULLIF(CAST(orders AS DOUBLE), 0),
-  orders / NULLIF(CAST(mark_spent AS DOUBLE), 0)
+  -- Cost per impression
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE mark_spent / impressions
+  END AS cost_per_impression,
 
-FROM marketing3;
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE (mark_spent / impressions) * 100
+  END AS cost_per_100impressions,
 
-SELECT *
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE (mark_spent / impressions) * 1000
+  END AS cost_per_1000impressions,
+
+  -- Profit per impression
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE profit / impressions
+  END AS profit_per_impression,
+
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE (profit / impressions) * 100
+  END AS profit_per_100impressions,
+
+  CASE 
+    WHEN impressions = 0 THEN 0
+    ELSE (profit / impressions) * 1000
+  END AS profit_per_1000impressions,
+
+  -- Impressions per click
+  CASE 
+    WHEN clicks = 0 THEN 0
+    ELSE impressions / CAST(clicks AS DOUBLE)
+  END AS impressions_per_click,
+
+  CASE 
+    WHEN clicks = 0 THEN 0
+    ELSE (impressions / CAST(clicks AS DOUBLE)) * 100
+  END AS impressions_per_100clicks,
+
+  CASE 
+    WHEN clicks = 0 THEN 0
+    ELSE (impressions / CAST(clicks AS DOUBLE)) * 1000
+  END AS impressions_per_1000clicks,
+
+  -- Clicks per lead
+  CASE 
+    WHEN leads = 0 THEN 0
+    ELSE clicks / CAST(leads AS DOUBLE)
+  END AS clicks_per_leads,
+
+  -- Leads per click
+  CASE 
+    WHEN clicks = 0 THEN 0
+    ELSE leads / CAST(clicks AS DOUBLE)
+  END AS leads_per_click,
+
+  -- Orders per lead
+  CASE 
+    WHEN leads = 0 THEN 0
+    ELSE orders / CAST(leads AS DOUBLE)
+  END AS orders_per_lead,
+
+  -- Leads per order
+  CASE 
+    WHEN orders = 0 THEN 0
+    ELSE leads / CAST(orders AS DOUBLE)
+  END AS lead_per_order,
+
+  -- Cost per order
+  CASE 
+    WHEN orders = 0 THEN 0
+    ELSE mark_spent / CAST(orders AS DOUBLE)
+  END AS cost_per_order,
+
+  -- Per-dollar contribution to order
+  CASE 
+    WHEN mark_spent = 0 THEN 0
+    ELSE orders / CAST(mark_spent AS DOUBLE)
+  END AS per_dollar_contribution_to_order
+
 FROM marketing4;
 
 SELECT *
-FROM marketing3;
+FROM marketing5;
 
-ALTER TABLE marketing4
+ALTER TABLE marketing5
   MODIFY COLUMN `percent_of_total_impressions` DOUBLE AFTER `impressions`;
-
-
-SELECT *
-FROM marketing3;
-
-
-
-
-
-
 
 
