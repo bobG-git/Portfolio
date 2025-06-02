@@ -505,7 +505,6 @@ CASE
    AS cost_per_order,
 
   -- Per-dollar contribution to order
-
     CASE 
       WHEN mark_spent = 0 THEN 0
       ELSE orders / CAST(mark_spent AS DOUBLE)
@@ -524,7 +523,7 @@ SELECT *
 FROM marketing3;
 
 
--- Chaning column positions for easier analysis
+-- Chaning column positions for smoother comparisons and analysis
 ALTER TABLE marketing3
   MODIFY COLUMN `percent_of_total_impressions` DOUBLE AFTER `impressions`,
   MODIFY COLUMN `percent_of_total_orders` DOUBLE AFTER `orders`,
